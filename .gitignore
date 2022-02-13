@@ -1,3 +1,6 @@
+# Credentials for the app
+credentials.h
+
 # Prerequisites
 *.d
 
