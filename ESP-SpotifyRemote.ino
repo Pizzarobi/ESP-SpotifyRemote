@@ -14,12 +14,17 @@ const char* host = "api.spotify.com";
 const int httpsPort = 443;
 
 SpotifyClient client(clientID, clientSecret, redirectUri);
+SpotifyData data;
 SpotifyAuth auth;
+
+long lastUpdate = 0;
 
 
 String formatTime(uint32_t time);
 void saveRefreshToken(String refreshToken);
 String loadRefreshToken();
+void clearRefreshToken();
+//void serialPlayerInput(char message);
 
 void setup(){
   Serial.begin(115200);
@@ -73,7 +78,6 @@ void setup(){
   client.getToken(&auth, grantType, code);
   Serial.printf("Refresh token: %s\nAccess Token: %s\n", auth.refreshToken.c_str(), auth.accessToken.c_str());
   if (auth.refreshToken != "") {
-    saveRefreshToken(auth.refreshToken);
   }
 }
 
@@ -82,26 +86,27 @@ void loop() {
       message = Serial.read();
 //      Serial.print("I received: ");
 //      Serial.println(message);
-      if(message == '1' || message == '2' || message == '3' || message == '4'){
+      if(message == '1' || message == '2' || message == '3' || message == '4' || message == '5' || message == '9'){
         serialPlayerInput(message);
       }
     }
 
-//    if (millis() - lastUpdate > 1000) {
-//      uint16_t responseCode = client.update(&data, &auth);
-//      Serial.printf("HREF: %s\n", data.image300Href.c_str());
-//      lastUpdate = millis();
-//      Serial.printf("--------Response Code: %d\n", responseCode);
-//      Serial.printf("--------Free mem: %d\n", ESP.getFreeHeap());
-//      if (responseCode == 401) {
-//        client.getToken(&auth, "refresh_token", auth.refreshToken);
-//        if (auth.refreshToken != "") {
-//          saveRefreshToken(auth.refreshToken);
-//        }
-//      }
+    if (millis() - lastUpdate > 10000) {
+      uint16_t responseCode = client.update(&data, &auth);
+      lastUpdate = millis();
+      Serial.printf("--------Response Code: %d\n", responseCode);
+      Serial.printf("Data: isPlaying: %d, isPlayerActive %d,\nsongUri: %s,\nplaylistUri: %s\n",data.isPlaying,data.isPlayerActive,data.songUri.c_str(),data.playlistUri.c_str());
+      Serial.printf("--------Free mem: %d\n\n", ESP.getFreeHeap());
+      if (responseCode == 401) {
+        client.getToken(&auth, "refresh_token", auth.refreshToken);
+        if (auth.refreshToken != "") {
+          saveRefreshToken(auth.refreshToken);
+        }
+      }
+    }
 //      if (responseCode == 200) {
-//
-//
+      
+
 //        String selectedImageHref = data.image300Href;
 //        selectedImageHref.replace("https", "http");
 //        
@@ -177,6 +182,14 @@ void serialPlayerInput(char message){
     method = "POST";
     command = "next";
     Serial.println("Next");
+  }else if(message == '5'){ // addCurrentToPlaylist
+    uint16_t responseCode = client.addCurrentToPlaylist(&auth,data.songUri,espTestPlaylist);
+    Serial.printf("Resonse Code: %d\n\n",responseCode);
+    return;
+  }else if(message == '9'){ // clearToken
+    clearRefreshToken();
+    Serial.println("Cleared refreshtoken from memory");
+    return;
   }else{
     Serial.println("unrecognised Command");
     message = '0';
@@ -187,12 +200,26 @@ void serialPlayerInput(char message){
   message = '0';
 }
 
+void getCurrentPlaying() {
+  uint16_t responseCode = client.update(&data,&auth);
+}
+
 String formatTime(uint32_t time) {
   char time_str[10];
   uint8_t minutes = time / (1000 * 60);
   uint8_t seconds = (time / 1000) % 60;
   sprintf(time_str, "%2d:%02d", minutes, seconds);
   return String(time_str);
+}
+
+void clearRefreshToken(){
+  File f = SPIFFS.open("/refreshToken.txt", "w+");
+  if (!f) {
+    Serial.println("Failed to open config file");
+    return;
+  }
+  f.println("");
+  f.close();
 }
 
 void saveRefreshToken(String refreshToken) {

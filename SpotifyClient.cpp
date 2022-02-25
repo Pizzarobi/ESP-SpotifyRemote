@@ -30,18 +30,100 @@
 #define min(X, Y) (((X)<(Y))?(X):(Y))
 
 
-
 SpotifyClient::SpotifyClient(String clientId, String clientSecret, String redirectUri) {
   this->clientId = clientId;
   this->clientSecret = clientSecret;
   this->redirectUri = redirectUri;
 }
 
+uint16_t SpotifyClient::update(SpotifyData *data, SpotifyAuth *auth) {
+  this->data = data;
+
+  level = 0;
+  isDataCall = true;
+  currentParent = "";
+  WiFiClientSecure client = WiFiClientSecure();
+  client.setInsecure();
+  JsonStreamingParser parser;
+  parser.setListener(this);
+
+  String host = "api.spotify.com";
+  const int port = 443;
+  String url = "/v1/me/player/currently-playing";
+  if (!client.connect(host.c_str(), port)) {
+    Serial.println("connection failed");
+    return 0;
+  }
+
+  Serial.print("Request: ");
+  Serial.println(url);
+  String request = "GET " + url + " HTTP/1.1\r\n" +
+               "Host: " + host + "\r\n" +
+               "Authorization: Bearer " + auth->accessToken + "\r\n" +
+               "Connection: close\r\n\r\n";
+  // This will send the request to the server
+  //Serial.println(request);
+  client.print(request);
+  
+  int retryCounter = 0;
+  while(!client.available()) {
+    executeCallback();
+
+    retryCounter++;
+    if (retryCounter > 10) {
+      return 0;
+    }
+    delay(10);
+  }
+  uint16_t bufLen = 1024;
+  unsigned char buf[bufLen];
+  boolean isBody = false;
+  char c = ' ';
+
+  int size = 0;
+  client.setNoDelay(false);
+  // while(client.connected()) {
+  uint16_t httpCode = 0;
+  while(client.connected() || client.available()) {
+    while((size = client.available()) > 0) {
+   
+      if (isBody) {
+        uint16_t len = min(bufLen, size);
+        c = client.readBytes(buf, len);
+        for (uint16_t i = 0; i < len; i++) {
+          parser.parse(buf[i]);
+          //Serial.print((char)buf[i]);
+        }
+      } else {
+        String line = client.readStringUntil('\r');
+        //Serial.println(line);
+        if (line.startsWith("HTTP/1.")) {
+          httpCode = line.substring(9, line.indexOf(' ', 9)).toInt();
+          //Serial.printf("HTTP Code: %d\n", httpCode); 
+        }
+        if (line == "\r" || line == "\n" || line == "") {
+          //Serial.println("Body starts now");
+          isBody = true;
+        }
+      }
+      executeCallback();
+    }
+  }
+  if (httpCode == 200) {
+    this->data->isPlayerActive = true;
+  } else if (httpCode == 204) {
+    this->data->isPlayerActive = false;
+  }
+  //client.flush();
+  //client.stop();
+  this->data = nullptr;
+  return httpCode;
+}
 
 uint16_t SpotifyClient::playerCommand(SpotifyAuth *auth, String method, String command) {
 
   level = 0;
-  isDataCall = true;
+  isDataCall = false;
   currentParent = "";
   WiFiClientSecure client = WiFiClientSecure();
   client.setInsecure(); // GRÖßTER FUCKING JOKE ICH FICK MEIN LEBEN SO EINE DRECKS LIBRARY ICH FICK SEINE MUTTER
@@ -98,13 +180,89 @@ uint16_t SpotifyClient::playerCommand(SpotifyAuth *auth, String method, String c
         }
       } else {
         String line = client.readStringUntil('\r');
-        Serial.println(line);
+        //Serial.println(line);
         if (line.startsWith("HTTP/1.")) {
           httpCode = line.substring(9, line.indexOf(' ', 9)).toInt();
-          Serial.printf("HTTP Code: %d\n", httpCode); 
+          //Serial.printf("HTTP Code: %d\n", httpCode); 
         }
         if (line == "\r" || line == "\n" || line == "") {
-          Serial.println("Body starts now");
+          //Serial.println("Body starts now");
+          isBody = true;
+        }
+      }
+    }
+    executeCallback();
+  }
+  return httpCode;
+}
+
+uint16_t SpotifyClient::addCurrentToPlaylist(SpotifyAuth *auth, String uris, String playlist) {
+
+  level = 0;
+  isDataCall = false;
+  currentParent = "";
+  WiFiClientSecure client = WiFiClientSecure();
+  client.setInsecure();
+  JsonStreamingParser parser;
+  parser.setListener(this);
+
+  String host = "api.spotify.com";
+  const int port = 443;
+  String url = "/v1/playlists/" + playlist + "/tracks?uris=" + uris;
+  
+  if (!client.connect(host.c_str(), port)) {
+    Serial.println("connection failed");
+    return 0;
+  }
+
+  Serial.print("Requesting URL: ");
+  Serial.println(url);
+  String request = "POST " + url + " HTTP/1.1\r\n" +
+               "Host: " + host + "\r\n" +
+               "Authorization: Bearer " + auth->accessToken + "\r\n" +
+               "Content-Length: 0\r\n" + 
+               "Connection: close\r\n\r\n";
+  // This will send the request to the server
+  //Serial.println(request);
+  client.print(request);
+  
+  int retryCounter = 0;
+  while(!client.available()) {
+    executeCallback();
+
+    retryCounter++;
+    if (retryCounter > 10) {
+      return 0;
+    }
+    delay(10);
+  }
+  uint16_t bufLen = 1024;
+  unsigned char buf[bufLen];
+  boolean isBody = false;
+  char c = ' ';
+
+  int size = 0;
+  client.setNoDelay(false);
+  // while(client.connected()) {
+  uint16_t httpCode = 0;
+  while(client.connected() || client.available()) {
+    while((size = client.available()) > 0) {
+      if (isBody) {
+        uint16_t len = min(bufLen, size);
+        c = client.readBytes(buf, len);
+        for (uint16_t i = 0; i < len; i++) {
+          parser.parse(buf[i]);
+          //Serial.print((char)buf[i]);
+        }
+      } else {
+        String line = client.readStringUntil('\r');
+        //Serial.println(line);
+        if (line.startsWith("HTTP/1.")) {
+          httpCode = line.substring(9, line.indexOf(' ', 9)).toInt();
+          //Serial.printf("HTTP Code: %d\n", httpCode); 
+        }
+        if (line == "\r" || line == "\n" || line == "") {
+          //Serial.println("Body starts now");
           isBody = true;
         }
       }
@@ -140,7 +298,7 @@ void SpotifyClient::getToken(SpotifyAuth *auth, String grantType, String code) {
   String authorizationRaw = clientId + ":" + clientSecret;
   String authorization = base64::encode(authorizationRaw, false);
   // This will send the request to the server
-  String content = "grant_type=" + grantType + "&" + codeParam + "=" + code + "&redirect_uri=" + redirectUri;
+  String content = "grant_type=" + grantType + "&" + codeParam + "=" + code +"&redirect_uri=" + redirectUri;
   String request = String("POST ") + url + " HTTP/1.1\r\n" +
                "Host: " + host + "\r\n" +
                "Authorization: Basic " + authorization + "\r\n" +
@@ -185,6 +343,8 @@ void SpotifyClient::getToken(SpotifyAuth *auth, String grantType, String code) {
   }
 }
 
+
+
 String SpotifyClient::startConfigPortal() {
   String oneWayCode = "";
 
@@ -195,7 +355,7 @@ String SpotifyClient::startConfigPortal() {
       + this->clientId 
       + "&response_type=code&redirect_uri=" 
       + this->redirectUri 
-      + "&scope=user-read-private%20user-read-currently-playing%20user-read-playback-state%20user-modify-playback-state"), true);
+      + "&scope=user-read-private%20user-read-currently-playing%20user-read-playback-state%20user-modify-playback-state%20playlist-modify-private%20playlist-modify-public"), true);
     server.send ( 302, "text/plain", "");
   } );
 
@@ -233,7 +393,7 @@ void SpotifyClient::whitespace(char c) {
 }
 
 void SpotifyClient::startDocument() {
-  Serial.println("start document");
+  //Serial.println("start document");
   level = 0;
 }
 
@@ -264,46 +424,22 @@ void SpotifyClient::value(String value) {
     String rootPath = this->getRootPath();
     //Serial.printf("%s = %s\n", rootPath.c_str(), value.c_str());
     //Serial.printf("%s = %s\n", currentKey.c_str(), value.c_str());
-      // progress_ms = 37516 uint32_t progressMs;
-//    if (currentKey == "progress_ms") {
-//      data->progressMs = value.toInt();
-//    }
-    // duration_ms = 259120 uint32_t durationMs;
-//    if (currentKey == "duration_ms") {
-//      data->durationMs = value.toInt();
-//    }
-    // name = Lost in My MindString name;
-//    if (currentKey == "name") {
-//      data->title = value;
-//    }
-    // is_playing = true boolean isPlaying;
-//    if (currentKey == "is_playing") {
-//      data->isPlaying = (value == "true" ? true : false);
-//    }
-//    if (currentKey == "height") {
-//      currentImageHeight = value.toInt();
-//    }
-//    if (currentKey == "url") {
-//      Serial.printf("HREF: %s = %s", rootPath.c_str(), value.c_str());
-//
-//      if (rootPath == "item.album.images.url") {
-//        if (currentImageHeight == 640) {
-//          data->image640Href = value;
-//        }
-//        if (currentImageHeight > 250 && currentImageHeight < 350) {
-//          data->image300Href = value;
-//        }
-//        if (currentImageHeight == 64) {
-//          data->image64Href = value;
-//        }
-//      }
-//    }
-//    if (rootPath == "item.album.artists.name") {
-//      data->artistName = value;
-//    }
 
+    // is_playing = true boolean isPlaying;
+   if (currentKey == "is_playing") {
+     data->isPlaying = (value == "true" ? true : false);
+   }
+   if (currentKey == "uri") {
+     if(rootPath == "item.uri") {
+       data->songUri = value;
+     }
+     if(rootPath == "context.uri"){
+       data->playlistUri = value;
+     }
+   }
+   
   } else {
-    Serial.printf("\n%s=%s\n", currentKey.c_str(), value.c_str());
+    //Serial.printf("\n%s=%s\n", currentKey.c_str(), value.c_str());
     // "access_token": "XXX" String accessToken;
     if (currentKey == "access_token") {
       auth->accessToken = value;
