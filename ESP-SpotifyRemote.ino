@@ -4,10 +4,12 @@
 #include <WiFiClientSecure.h>
 #include <FS.h>
 //Headers
-#include "credentials.h"
+#include "credentials.h" // Not included in Github repo. Template as credentials.txt
 #include "SpotifyClient.h"
 
-// Serial management
+// Spotify Playlists
+String espTestPlaylist = "0zvFsU9gkh4yWOHYs8zM71";
+
 char message = '0';
 
 const char* host = "api.spotify.com";
@@ -18,7 +20,6 @@ SpotifyData data;
 SpotifyAuth auth;
 
 long lastUpdate = 0;
-
 
 String formatTime(uint32_t time);
 void saveRefreshToken(String refreshToken);
@@ -54,7 +55,7 @@ void setup(){
   Serial.println(WiFi.localIP());
 
   // MDNS
-  if (!MDNS.begin(espotifierNodeName)) {             // Start the mDNS responder for espotify.home
+  if (!MDNS.begin(espotifierNodeName)) {             // Start the mDNS responder for espotify.local
     Serial.println("Error setting up MDNS responder!");
   }
   Serial.println("mDNS responder started");
@@ -66,7 +67,7 @@ void setup(){
   if (refreshToken == "") {
     Serial.println("No refresh token found. Requesting through browser");
   
-    Serial.println ( "Open browser at http://" + espotifierNodeName + ".home" );
+    Serial.println ( "Open browser at http://" + espotifierNodeName + ".local" );
 
     code = client.startConfigPortal();
     grantType = "authorization_code";
@@ -82,87 +83,29 @@ void setup(){
 }
 
 void loop() {
-    if(Serial.available() > 0){
-      message = Serial.read();
-//      Serial.print("I received: ");
-//      Serial.println(message);
-      if(message == '1' || message == '2' || message == '3' || message == '4' || message == '5' || message == '9'){
-        serialPlayerInput(message);
+  if(Serial.available() > 0){
+    message = Serial.read();
+    if(message == '1' || message == '2' || message == '3' || message == '4' || message == '5' || message == '9'){
+      serialPlayerInput(message);
+    }
+  }
+
+  if (millis() - lastUpdate > 10000) {
+    uint16_t responseCode = client.update(&data, &auth);
+    lastUpdate = millis();
+    Serial.printf("--------Response Code: %d\n", responseCode);
+    Serial.printf("Data: isPlaying: %d, isPlayerActive %d,\nsongUri: %s,\nplaylistUri: %s\n",data.isPlaying,data.isPlayerActive,data.songUri.c_str(),data.playlistUri.c_str());
+    Serial.printf("--------Free mem: %d\n\n", ESP.getFreeHeap());
+    if (responseCode == 401) {
+      client.getToken(&auth, "refresh_token", auth.refreshToken);
+      if (auth.refreshToken != "") {
+        saveRefreshToken(auth.refreshToken);
       }
     }
-
-    if (millis() - lastUpdate > 10000) {
-      uint16_t responseCode = client.update(&data, &auth);
-      lastUpdate = millis();
-      Serial.printf("--------Response Code: %d\n", responseCode);
-      Serial.printf("Data: isPlaying: %d, isPlayerActive %d,\nsongUri: %s,\nplaylistUri: %s\n",data.isPlaying,data.isPlayerActive,data.songUri.c_str(),data.playlistUri.c_str());
-      Serial.printf("--------Free mem: %d\n\n", ESP.getFreeHeap());
-      if (responseCode == 401) {
-        client.getToken(&auth, "refresh_token", auth.refreshToken);
-        if (auth.refreshToken != "") {
-          saveRefreshToken(auth.refreshToken);
-        }
-      }
-    }
-//      if (responseCode == 200) {
-      
-
-//        String selectedImageHref = data.image300Href;
-//        selectedImageHref.replace("https", "http");
-//        
-//        
-//        if (selectedImageHref != currentImageUrl) {
-//
-//          Serial.println("New Image. Downloading it");
-//
-//          isDownloadingCover = true;
-//          client.downloadFile(selectedImageHref, "/cover.jpg");
-//          isDownloadingCover = false;
-//          currentImageUrl = selectedImageHref;
-//          drawJPEGFromSpiffs("/cover.jpg", 45, 0);
-//          gfx.setColor(ILI9341_YELLOW);
-//        }
-// 
-//      }
-//      if (responseCode == 400) {
-//        gfx.fillBuffer(MINI_BLACK);
-//        gfx.setColor(MINI_WHITE);
-//        gfx.setTextAlignment(TEXT_ALIGN_CENTER);
-//        gfx.drawString(120, 20, "Please define\nclientId and clientSecret");
-//        gfx.commit(0,160);
-//      }
-//
-//    }
-//    drawSongInfo();
-//    
-//    if (touchController.isTouched(500) && millis() - lastTouchMillis > 1000) {
-//      TS_Point p = touchController.getPoint();
-//      lastTouchPoint = p;
-//      lastTouchMillis = millis();
-//      String command = "";
-//      String method = "";
-//      if (p.y > 160) {
-//        if (p.x < 80) {
-//          method = "POST"; 
-//          command = "previous";
-//        } else if (p.x >= 80 && p.x <= 160) {
-//          method = "PUT"; 
-//          command = "play";
-//          if (data.isPlaying) {
-//            command = "pause";
-//          }
-//          data.isPlaying = !data.isPlaying;   
-//        } else if (p.x > 160) {
-//          method = "POST"; 
-//          command = "next";
-//        }
-//        uint16_t responseCode = client.playerCommand(&auth, method, command);
-//      Serial.print("playerCommand response =");
-//      Serial.println(responseCode);
-//    }
-//  }
+  }
 }
 
+// Control ESP and Spotify using Serial input. Used for testing
 void serialPlayerInput(char message){
   String command = "";
   String method = "";
@@ -182,8 +125,8 @@ void serialPlayerInput(char message){
     method = "POST";
     command = "next";
     Serial.println("Next");
-  }else if(message == '5'){ // addCurrentToPlaylist
-    uint16_t responseCode = client.addCurrentToPlaylist(&auth,data.songUri,espTestPlaylist);
+  }else if(message == '5'){ // addSongToPlaylist
+    uint16_t responseCode = client.addSongToPlaylist(&auth,data.songUri,espTestPlaylist);
     Serial.printf("Resonse Code: %d\n\n",responseCode);
     return;
   }else if(message == '9'){ // clearToken
@@ -200,18 +143,12 @@ void serialPlayerInput(char message){
   message = '0';
 }
 
+//
 void getCurrentPlaying() {
   uint16_t responseCode = client.update(&data,&auth);
 }
 
-String formatTime(uint32_t time) {
-  char time_str[10];
-  uint8_t minutes = time / (1000 * 60);
-  uint8_t seconds = (time / 1000) % 60;
-  sprintf(time_str, "%2d:%02d", minutes, seconds);
-  return String(time_str);
-}
-
+// clears token in memory
 void clearRefreshToken(){
   File f = SPIFFS.open("/refreshToken.txt", "w+");
   if (!f) {
@@ -222,6 +159,7 @@ void clearRefreshToken(){
   f.close();
 }
 
+// saves refreshtoken in memory
 void saveRefreshToken(String refreshToken) {
   
   File f = SPIFFS.open("/refreshToken.txt", "w+");
@@ -233,6 +171,7 @@ void saveRefreshToken(String refreshToken) {
   f.close();
 }
 
+// loads refreshtoken from memory
 String loadRefreshToken() {
   Serial.println("Loading config");
   File f = SPIFFS.open("/refreshToken.txt", "r");
@@ -248,4 +187,12 @@ String loadRefreshToken() {
       return token;
   }
   return "";
+}
+
+String formatTime(uint32_t time) {
+  char time_str[10];
+  uint8_t minutes = time / (1000 * 60);
+  uint8_t seconds = (time / 1000) % 60;
+  sprintf(time_str, "%2d:%02d", minutes, seconds);
+  return String(time_str);
 }

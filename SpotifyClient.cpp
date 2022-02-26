@@ -1,6 +1,7 @@
 /**The MIT License (MIT)
  
  Copyright (c) 2018 by ThingPulse Ltd., https://thingpulse.com
+ Changes by Robert Kalmar (2022)
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -29,13 +30,15 @@
 
 #define min(X, Y) (((X)<(Y))?(X):(Y))
 
-
 SpotifyClient::SpotifyClient(String clientId, String clientSecret, String redirectUri) {
   this->clientId = clientId;
   this->clientSecret = clientSecret;
   this->redirectUri = redirectUri;
 }
 
+
+
+// Fetch currently playing song and data
 uint16_t SpotifyClient::update(SpotifyData *data, SpotifyAuth *auth) {
   this->data = data;
 
@@ -62,7 +65,7 @@ uint16_t SpotifyClient::update(SpotifyData *data, SpotifyAuth *auth) {
                "Authorization: Bearer " + auth->accessToken + "\r\n" +
                "Connection: close\r\n\r\n";
   // This will send the request to the server
-  //Serial.println(request);
+  // Serial.println(request);
   client.print(request);
   
   int retryCounter = 0;
@@ -120,8 +123,8 @@ uint16_t SpotifyClient::update(SpotifyData *data, SpotifyAuth *auth) {
   return httpCode;
 }
 
+// Sends a player command to Spotify API
 uint16_t SpotifyClient::playerCommand(SpotifyAuth *auth, String method, String command) {
-
   level = 0;
   isDataCall = false;
   currentParent = "";
@@ -196,8 +199,8 @@ uint16_t SpotifyClient::playerCommand(SpotifyAuth *auth, String method, String c
   return httpCode;
 }
 
-uint16_t SpotifyClient::addCurrentToPlaylist(SpotifyAuth *auth, String uris, String playlist) {
-
+// add specified songs to specified playlist
+uint16_t SpotifyClient::addSongToPlaylist(SpotifyAuth *auth, String uris, String playlist) {
   level = 0;
   isDataCall = false;
   currentParent = "";
@@ -297,7 +300,6 @@ void SpotifyClient::getToken(SpotifyAuth *auth, String grantType, String code) {
   }
   String authorizationRaw = clientId + ":" + clientSecret;
   String authorization = base64::encode(authorizationRaw, false);
-  // This will send the request to the server
   String content = "grant_type=" + grantType + "&" + codeParam + "=" + code +"&redirect_uri=" + redirectUri;
   String request = String("POST ") + url + " HTTP/1.1\r\n" +
                "Host: " + host + "\r\n" +
@@ -308,7 +310,6 @@ void SpotifyClient::getToken(SpotifyAuth *auth, String grantType, String code) {
                content;
   Serial.println(request);
   client.print(request);
-      
 
   int retryCounter = 0;
   while(!client.available()) {
@@ -343,8 +344,7 @@ void SpotifyClient::getToken(SpotifyAuth *auth, String grantType, String code) {
   }
 }
 
-
-
+// start the web config portal
 String SpotifyClient::startConfigPortal() {
   String oneWayCode = "";
 

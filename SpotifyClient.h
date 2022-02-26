@@ -151,7 +151,7 @@ class SpotifyClient: public JsonListener {
     uint16_t update(SpotifyData *data, SpotifyAuth *auth);
 
     uint16_t playerCommand(SpotifyAuth *auth, String method, String command);
-    uint16_t addCurrentToPlaylist(SpotifyAuth *auth, String uris, String playlist);
+    uint16_t addSongToPlaylist(SpotifyAuth *auth, String uris, String playlist);
 
     void getToken(SpotifyAuth *auth, String grantType, String code);
 
